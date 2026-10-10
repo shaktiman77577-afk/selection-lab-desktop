@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src file: data:">
+<title>Selection Lab</title>
+<style>
+  :root { --bg:#f6f4ee; --card:#fff; --text:#221c10; --muted:#776f5c; --gold:#FFAB00; --navy:#1a2f55; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0d0b08; --card:#16130e; --text:#fff; --muted:#9a917f; } }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 15px/1.5 "Segoe UI", system-ui, sans-serif;
+         display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .card { background: var(--card); border-radius: 16px; padding: 36px 32px; max-width: 420px; width: 100%;
+          text-align: center; box-shadow: 0 6px 24px rgba(0,0,0,.08); }
+  img { width: 72px; height: 72px; border-radius: 16px; }
+  h1 { font-size: 21px; margin: 18px 0 6px; color: var(--navy); }
+  @media (prefers-color-scheme: dark) { h1 { color: #fff; } }
+  p { margin: 0 0 22px; color: var(--muted); }
+  button { background: var(--gold); color: #221c10; border: 0; border-radius: 10px; padding: 11px 26px;
+           font: 600 15px "Segoe UI", system-ui, sans-serif; cursor: pointer; }
+  button:hover { filter: brightness(.95); }
+  .spin { width: 28px; height: 28px; margin: 4px auto 0; border: 3px solid rgba(255,171,0,.25);
+          border-top-color: var(--gold); border-radius: 50%; animation: r 0.9s linear infinite; }
+  @keyframes r { to { transform: rotate(360deg); } }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <img src="logo.png" alt="">
+    <div id="offline">
+      <h1>You're offline</h1>
+      <p>Check your internet connection. Selection Lab will reload as soon as you're back online.</p>
+      <button id="retry" type="button">Try again</button>
+    </div>
+    <div id="update" hidden>
+      <h1>Updating Selection Lab</h1>
+      <p>A required update is downloading. The app will restart by itself when it's ready.</p>
+      <div class="spin"></div>
+    </div>
+  </div>
+<script>
+  (function () {
+    var q = new URLSearchParams(location.search);
+    var mode = q.get("mode");
+    var target = q.get("u") || "";
+    // Sirf apni site par wapas — koi aur URL nahi
+    if (!/^https:\/\/(www\.)?selectionlab\.in(\/|$)/.test(target)) target = "https://www.selectionlab.in/";
+    if (mode === "update") {
+      document.getElementById("offline").hidden = true;
+      document.getElementById("update").hidden = false;
+      return;
+    }
+    function go() { location.href = target; }
+    document.getElementById("retry").addEventListener("click", go);
+    window.addEventListener("online", go);
+  })();
+</script>
+</body>
+</html>
