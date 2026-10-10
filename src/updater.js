@@ -46,7 +46,7 @@ function blockAndQuit(win, message) {
   app.exit(0);
 }
 
-function init(win, onForced) {
+function init(win, onForced, onConfig) {
   if (!app.isPackaged) return; // dev me update nahi
   let autoUpdater;
   try {
@@ -92,6 +92,7 @@ function init(win, onForced) {
 
   (async () => {
     const cfg = await fetchConfig();
+    if (cfg && onConfig) onConfig(cfg);
     if (cfg && cfg.min_version && cmpVersion(app.getVersion(), cfg.min_version) < 0) {
       forced = true;
       // Site band — sirf "Updating..." screen, jab tak naya version na aa jaye
@@ -103,4 +104,4 @@ function init(win, onForced) {
   setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), CHECK_EVERY_MS);
 }
 
-module.exports = { init, cmpVersion };
+module.exports = { init, cmpVersion, RELEASES_URL };

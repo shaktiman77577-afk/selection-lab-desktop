@@ -17,9 +17,9 @@
   h1 { font-size: 21px; margin: 18px 0 6px; color: var(--navy); }
   @media (prefers-color-scheme: dark) { h1 { color: #fff; } }
   p { margin: 0 0 22px; color: var(--muted); }
-  button { background: var(--gold); color: #221c10; border: 0; border-radius: 10px; padding: 11px 26px;
+  button, .btn { display: inline-block; text-decoration: none; background: var(--gold); color: #221c10; border: 0; border-radius: 10px; padding: 11px 26px;
            font: 600 15px "Segoe UI", system-ui, sans-serif; cursor: pointer; }
-  button:hover { filter: brightness(.95); }
+  button:hover, .btn:hover { filter: brightness(.95); }
   .spin { width: 28px; height: 28px; margin: 4px auto 0; border: 3px solid rgba(255,171,0,.25);
           border-top-color: var(--gold); border-radius: 50%; animation: r 0.9s linear infinite; }
   @keyframes r { to { transform: rotate(360deg); } }
@@ -34,6 +34,12 @@
       <p>Check your internet connection. Selection Lab will reload as soon as you're back online.</p>
       <button id="retry" type="button">Try again</button>
     </div>
+    <div id="modified" hidden>
+      <h1>This copy has been changed</h1>
+      <p>Some files of this Selection Lab app don't match the official version, so it can't be used.
+         For your safety, uninstall it and install Selection Lab again from the official source.</p>
+      <a id="dl" class="btn" href="#">Download official app</a>
+    </div>
     <div id="update" hidden>
       <h1>Updating Selection Lab</h1>
       <p>A required update is downloading. The app will restart by itself when it's ready.</p>
@@ -47,6 +53,14 @@
     var target = q.get("u") || "";
     // Sirf apni site par wapas — koi aur URL nahi
     if (!/^https:\/\/(www\.)?selectionlab\.in(\/|$)/.test(target)) target = "https://www.selectionlab.in/";
+    if (mode === "modified") {
+      document.getElementById("offline").hidden = true;
+      document.getElementById("modified").hidden = false;
+      var d = q.get("d") || "";
+      var okD = /^https:\/\/((www\.)?selectionlab\.in\/|github\.com\/shaktiman77577-afk\/selection-lab-desktop\/)/i.test(d);
+      document.getElementById("dl").href = okD ? d : "https://github.com/shaktiman77577-afk/selection-lab-desktop/releases/latest";
+      return;
+    }
     if (mode === "update") {
       document.getElementById("offline").hidden = true;
       document.getElementById("update").hidden = false;

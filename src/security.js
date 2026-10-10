@@ -54,6 +54,14 @@ function isSafeExternal(url) {
   return ["https:", "http:", "mailto:", "tel:", "whatsapp:", "tg:"].includes(u.protocol);
 }
 
+/** "Install from official" button — sirf apni site ya apni GitHub release */
+function isOfficialDownload(url) {
+  const u = parse(url);
+  if (!u || u.protocol !== "https:") return false;
+  if (SITE_HOSTS.has(u.hostname)) return true;
+  return u.hostname === "github.com" && u.pathname.toLowerCase().startsWith("/shaktiman77577-afk/selection-lab-desktop/");
+}
+
 /** IPC bhejne wala frame hamari site ka hai? (bank/payment page ko bridge nahi) */
 function isTrustedSender(event) {
   const frame = event && event.senderFrame;
@@ -69,5 +77,6 @@ module.exports = {
   isApiUrl,
   isPaymentUrl,
   isSafeExternal,
+  isOfficialDownload,
   isTrustedSender,
 };

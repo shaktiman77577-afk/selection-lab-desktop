@@ -1,9 +1,15 @@
 name: Build Windows app
 
-# - Har push par: .exe banta hai, chalakar jaancha jata hai (smoke test), aur
+# - Har push par: .exe banta hai aur jaancha jata hai:
+#     1. smoke test (bani hui app khulti hai)
+#     2. integrity.json (har file ka SHA-256) banta hai
+#     3. installer chupchaap install karke installed app apni files khud jaanchti hai
+#     4. ek nakli .dll daal kar dekhte hain ki app pakadti hai
 #   Actions -> is run -> Artifacts me "SelectionLab-Windows" milta hai.
-# - Tag push (jaise v1.0.1) par: GitHub Release banti hai. Isi Release se
-#   sab students ki app apne aap update hoti hai.
+# - Tag push (jaise v1.0.1) par: pehle DRAFT release banti hai, saari jaanch
+#   pass ho to integrity.json judta hai aur release publish hoti hai. Isi se
+#   sab students ki app apne aap update hoti hai. Jaanch fail = release
+#   draft hi rehti hai, kisi tak nahi jaati.
 #   Naya version: package.json me "version" badlo, commit, phir
 #     git tag v1.0.1 && git push origin v1.0.1
 
@@ -19,6 +25,9 @@ permissions:
 jobs:
   windows:
     runs-on: windows-latest
+    env:
+      IS_RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -32,18 +41,22 @@ jobs:
       - name: Syntax check
         run: npm run check
 
-      - name: Tag must match package.json version
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Version
+        id: ver
         shell: bash
         run: |
           PKG=$(node -p "require('./package.json').version")
-          TAG="${GITHUB_REF_NAME#v}"
-          if [ "$PKG" != "$TAG" ]; then
-            echo "package.json version ($PKG) != tag ($TAG)"; exit 1
+          echo "version=$PKG" >> "$GITHUB_OUTPUT"
+          if [ "$IS_RELEASE" = "true" ] && [ "$PKG" != "${GITHUB_REF_NAME#v}" ]; then
+            echo "package.json version ($PKG) != tag ($GITHUB_REF_NAME)"; exit 1
           fi
 
+      # Tag par electron-builder DRAFT release me upload karta hai (package.json: releaseType draft)
       - name: Build installer
-        run: npx electron-builder --win --publish never
+        shell: bash
+        run: |
+          if [ "$IS_RELEASE" = "true" ]; then PUB=always; else PUB=never; fi
+          npx electron-builder --win --publish $PUB
 
       - name: Smoke test (packaged app starts with fuses + ASAR integrity)
         shell: pwsh
@@ -54,6 +67,34 @@ jobs:
           if ($p.ExitCode -ne 0) { Write-Error "Smoke test failed: exit $($p.ExitCode)"; exit 1 }
           Write-Host "Smoke test OK"
 
+      - name: Make integrity.json
+        run: node scripts/make-integrity.js release/win-unpacked ${{ steps.ver.outputs.version }} release/integrity.json
+
+      - name: Install, self-check, tamper check
+        shell: pwsh
+        timeout-minutes: 5
+        run: |
+          $setup = Get-ChildItem "release" -Filter "SelectionLab-Setup-*.exe" | Select-Object -First 1
+          $i = Start-Process -FilePath $setup.FullName -ArgumentList "/S" -PassThru -Wait
+          if ($i.ExitCode -ne 0) { Write-Error "Installer failed: exit $($i.ExitCode)"; exit 1 }
+          Start-Sleep -Seconds 3
+          Get-Process -Name "Selection Lab" -ErrorAction SilentlyContinue | Stop-Process -Force
+          $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter "Selection Lab.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $exe) { Write-Error "Installed app not found"; exit 1 }
+          Write-Host "Installed at $($exe.DirectoryName)"
+          $man = (Resolve-Path "release/integrity.json").Path
+
+          $r = Start-Process -FilePath $exe.FullName -ArgumentList "--sl-verify-self=$man" -PassThru -Wait
+          if ($r.ExitCode -ne 0) { Write-Error "Installed app failed its own file check (false alarm risk): exit $($r.ExitCode)"; exit 1 }
+          Write-Host "Self-check OK on clean install"
+
+          $fake = Join-Path $exe.DirectoryName "injected.dll"
+          Set-Content -Path $fake -Value "not a real dll"
+          $t = Start-Process -FilePath $exe.FullName -ArgumentList "--sl-verify-self=$man" -PassThru -Wait
+          Remove-Item $fake -Force
+          if ($t.ExitCode -ne 3) { Write-Error "Tampering was NOT detected: exit $($t.ExitCode)"; exit 1 }
+          Write-Host "Tamper check OK (extra DLL detected)"
+
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
@@ -61,9 +102,13 @@ jobs:
           path: |
             release/*.exe
             release/latest.yml
+            release/integrity.json
 
-      - name: Publish GitHub Release (tags only)
-        if: startsWith(github.ref, 'refs/tags/v')
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx electron-builder --win --publish always
+      - name: Publish release (tags only)
+        if: env.IS_RELEASE == 'true'
+        shell: bash
+        run: |
+          TAG="v${{ steps.ver.outputs.version }}"
+          gh release upload "$TAG" release/integrity.json --clobber -R "$GITHUB_REPOSITORY"
+          gh release edit "$TAG" --draft=false --latest -R "$GITHUB_REPOSITORY"
+          echo "Published $TAG"

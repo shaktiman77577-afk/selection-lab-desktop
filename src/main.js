@@ -17,6 +17,9 @@ const { app, BrowserWindow, session, shell, ipcMain, dialog, Menu, screen } = re
 
 // CI me build ki jaanch: app khulti hai ya nahi (fuses / ASAR integrity sahi hain)
 const SMOKE_TEST = process.argv.includes("--sl-smoke-test");
+// CI: install ke baad apni files ki jaanch — --sl-verify-self=<integrity.json>
+const VERIFY_SELF = (process.argv.find((a) => a.startsWith("--sl-verify-self=")) || "").slice("--sl-verify-self=".length);
+const CLI_MODE = SMOKE_TEST || !!VERIFY_SELF;
 
 // ── Debug ke raaste band ───────────────────────────────────────────────────
 // Fuses --inspect aur ELECTRON_RUN_AS_NODE pehle hi band karte hain. Chromium
@@ -30,6 +33,7 @@ const sec = require("./security");
 const store = require("./store");
 const login = require("./login");
 const updater = require("./updater");
+const integrity = require("./integrity");
 
 const PARTITION = "persist:selectionlab";
 const PROTOCOL = "selectionlab";
@@ -39,11 +43,13 @@ const RESTORE_WITHIN_MS = 12 * 60 * 60 * 1000;
 let win = null;
 let paymentFlow = false; // payment ke dauraan bank ke page main window me chal sakte hain
 let forcedUpdate = false;
+let modifiedBlock = false; // files badli mili — app band (sirf download ka link)
+let downloadUrl = updater.RELEASES_URL;
 
 // ── Ek hi app chale (deep link isi se aata hai) ────────────────────────────
 // Doosri copy khuli to apna argv (selectionlab:// link) pehli copy ko de kar
 // turant band — koi window nahi banti.
-const IS_PRIMARY = SMOKE_TEST || app.requestSingleInstanceLock();
+const IS_PRIMARY = CLI_MODE || app.requestSingleInstanceLock();
 if (!IS_PRIMARY) {
   app.exit(0);
 } else {
@@ -61,7 +67,7 @@ app.on("open-url", (e, link) => {
   focusWindow();
 });
 
-if (!SMOKE_TEST) {
+if (!CLI_MODE) {
   if (process.defaultApp && process.argv.length >= 2) {
     app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path.resolve(process.argv[1])]);
   } else {
@@ -207,6 +213,7 @@ function createWindow() {
 
   // Internet nahi -> apni offline screen (khud dobara try karti hai)
   wc.on("did-fail-load", (_e, code, _desc, url, isMainFrame) => {
+    if (modifiedBlock || forcedUpdate) return;
     if (!isMainFrame || code === -3) return; // -3 = navigation cancel, error nahi
     const network = code <= -100 && code > -200; // connection wali galtiyan (-105 DNS, -106 offline, -118 timeout...)
     if (!network) return;
@@ -258,8 +265,10 @@ function openOutside(url) {
 
 function guardNavigation(wc, { main }) {
   const check = (e, url) => {
-    if (forcedUpdate && main) {
+    if ((forcedUpdate || modifiedBlock) && main) {
       e.preventDefault();
+      // Block screen ka "Download" button — sirf official jagah
+      if (modifiedBlock && sec.isOfficialDownload(url)) openOutside(url);
       return;
     }
     const ok = main ? allowMainFrame(url) : url.startsWith("https://") || url === "about:blank";
@@ -381,10 +390,42 @@ ipcMain.handle("sl:google-cancel", (event) => {
   login.cancel();
 });
 
+// ── Files badli hui mili ───────────────────────────────────────────────────
+
+function blockModified() {
+  modifiedBlock = true;
+  if (!win || win.isDestroyed()) return;
+  win.webContents.stop();
+  win.loadFile(STATUS_PAGE, { query: { mode: "modified", d: downloadUrl } });
+  focusWindow();
+}
+
+async function verifySelfCli(manifestPath) {
+  try {
+    const ofs = require("original-fs");
+    const manifest = JSON.parse(ofs.readFileSync(manifestPath, "utf8"));
+    if (!integrity.validManifest(manifest, app.getVersion())) {
+      console.log("VERIFY_BAD_MANIFEST");
+      app.exit(4);
+      return;
+    }
+    const r = await integrity.verify(integrity.installDir(), manifest);
+    console.log(r.ok ? "VERIFY_OK" : "VERIFY_MODIFIED " + r.problems.join(", "));
+    app.exit(r.ok ? 0 : 3);
+  } catch (e) {
+    console.log("VERIFY_ERROR " + (e && e.message));
+    app.exit(5);
+  }
+}
+
 // ── Start ──────────────────────────────────────────────────────────────────
 
 app.whenReady().then(() => {
   if (!IS_PRIMARY) return;
+  if (VERIFY_SELF) {
+    verifySelfCli(VERIFY_SELF);
+    return;
+  }
   if (SMOKE_TEST) {
     // Yahan tak pahunche = ASAR theek, fuses theek, code chal raha hai
     try {
@@ -409,10 +450,21 @@ app.whenReady().then(() => {
   setupSession();
   createWindow();
 
-  updater.init(win, () => {
-    forcedUpdate = true;
-    if (win && !win.isDestroyed()) win.loadFile(STATUS_PAGE, { query: { mode: "update" } });
-  });
+  updater.init(
+    win,
+    () => {
+      forcedUpdate = true;
+      if (win && !win.isDestroyed() && !modifiedBlock) win.loadFile(STATUS_PAGE, { query: { mode: "update" } });
+    },
+    (cfg) => {
+      if (cfg && sec.isOfficialDownload(cfg.download_url)) downloadUrl = cfg.download_url;
+    }
+  );
+
+  // Apni files ki jaanch (peeche-peeche). Badlav mila -> site band, warning screen.
+  integrity
+    .run((problems) => blockModified(problems))
+    .catch((e) => console.error("[integrity]", e && e.message));
 
   app.on("activate", () => {
     if (!win) createWindow();

@@ -14,6 +14,11 @@ stay on the server (api.selectionlab.online), so the app holds no secrets or pai
   Other links open in the normal browser. Electron fuses are set (no run-as-Node, no `--inspect`,
   ASAR integrity, app loads only from ASAR), and the app refuses to start with
   `--remote-debugging-port`.
+- **Self check.** On every start the app hashes its own install files (SHA-256) and compares them
+  with `integrity.json` from this version's GitHub Release. A changed file, a missing exe/dll/asar,
+  or an added dll/exe means the app shuts the site and shows "This copy has been changed —
+  download the official app". The manifest is cached for offline starts. If it can't be fetched
+  (not an official release, or never online), the check is skipped; Electron's ASAR check still applies.
 - **Google login** runs in the system browser (PKCE): `/desktop-login` on the site returns to the app
   through `selectionlab://`. Password and OTP login work inside the app.
 - **Auto-update** comes from this repo's GitHub Releases. To force an update, set
@@ -24,15 +29,18 @@ stay on the server (api.selectionlab.online), so the app holds no secrets or pai
 ## Build
 
 Every push runs `.github/workflows/build-windows.yml` on a Windows runner:
-1. The workflow installs packages, builds `SelectionLab-Setup-x.y.z.exe` and runs a smoke test
-   (the packaged app must start).
-2. The installer appears under **Actions → run → Artifacts → SelectionLab-Windows**.
+1. Builds `SelectionLab-Setup-x.y.z.exe` and smoke-tests it (the packaged app must start).
+2. Makes `integrity.json`, silently installs the app, runs the installed app's self check (must pass),
+   then drops a fake dll into the folder (the check must catch it).
+3. The installer appears under **Actions → run → Artifacts → SelectionLab-Windows**.
 
 ## Release a new version
 
 1. Bump `"version"` in `package.json` (for example `1.0.1`) and commit.
 2. Run `git tag v1.0.1 && git push origin v1.0.1`.
-3. The workflow publishes a GitHub Release, and installed apps update themselves.
+3. The workflow builds into a **draft** release, runs all the checks, attaches `integrity.json`, then
+   publishes it. Installed apps download the update in the background (only the changed parts) and
+   install it on restart. If any check fails, the release stays a draft and reaches no one.
 
 ## Local run (developer machine)
 
