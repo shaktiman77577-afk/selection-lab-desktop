@@ -14,6 +14,9 @@ stay on the server (api.selectionlab.online), so the app holds no secrets or pai
   Other links open in the normal browser. Electron fuses are set (no run-as-Node, no `--inspect`,
   ASAR integrity, app loads only from ASAR), and the app refuses to start with
   `--remote-debugging-port`.
+- **Screenshot block.** Windows content protection: screenshots, screen recording and screen
+  sharing show nothing on every page except home, My Learning, the course list and a course's
+  outside page (details / Buy). PDF windows are protected too. Payment pages are not.
 - **Self check.** On every start the app hashes its own install files (SHA-256) and compares them
   with `integrity.json` from this version's GitHub Release. A changed file, a missing exe/dll/asar,
   or an added dll/exe means the app shuts the site and shows "This copy has been changed —

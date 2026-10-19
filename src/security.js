@@ -62,6 +62,28 @@ function isOfficialDownload(url) {
   return u.hostname === "github.com" && u.pathname.toLowerCase().startsWith("/shaktiman77577-afk/selection-lab-desktop/");
 }
 
+// Screenshot / screen recording sirf in pages par khula (Oct 2026). Baaki har
+// page (course ke andar ka content, mock, descriptive, current affairs, PDF...)
+// par window recording / screenshot me kaali ya gayab aati hai.
+const SCREENSHOT_OK = [
+  /^\/$/,                          // home
+  /^\/my-learning(\/|$)/,           // My Learning
+  /^\/courses(\/|$)/,               // course list
+  /^\/course\/[^/]+\/?$/,            // course ka bahar wala page (details / Buy)
+];
+
+/** Is page par screenshot chalega? Apni site: sirf upar wale pages. API (PDF):
+ *  kabhi nahi. Baaki (payment / bank page, app ki apni status screen): haan. */
+function screenshotAllowed(url) {
+  const u = parse(url);
+  if (!u) return true;
+  if (u.protocol === "https:" && SITE_HOSTS.has(u.hostname)) {
+    return SCREENSHOT_OK.some((re) => re.test(u.pathname));
+  }
+  if (u.protocol === "https:" && u.hostname === API_HOST) return false;
+  return true;
+}
+
 /** IPC bhejne wala frame hamari site ka hai? (bank/payment page ko bridge nahi) */
 function isTrustedSender(event) {
   const frame = event && event.senderFrame;
@@ -79,4 +101,5 @@ module.exports = {
   isSafeExternal,
   isOfficialDownload,
   isTrustedSender,
+  screenshotAllowed,
 };

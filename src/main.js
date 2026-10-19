@@ -11,6 +11,8 @@
 //  - Google login ka selectionlab:// link
 //  - Offline screen, test ke beech window band karne par puchna
 //  - Auto-update
+//  - Screenshot / screen recording band (sirf home, My Learning, course list
+//    aur course ke bahar wale page par khula) — Oct 2026
 
 const path = require("path");
 const { app, BrowserWindow, session, shell, ipcMain, dialog, Menu, screen } = require("electron");
@@ -115,7 +117,7 @@ function setupSession() {
   return ses;
 }
 
-// ── Window ─────────────────────────────────────────────────────────────────
+// ── Window ─────────────────────────────────────────────────────────────────────
 
 function startUrl() {
   const last = store.get("lastPage");
@@ -160,6 +162,15 @@ function webPrefs(extra) {
   };
 }
 
+// Windows: SetWindowDisplayAffinity — screenshot / recording / screen share me
+// window dikhti nahi. Page badalte hi dobara tay hota hai (security.js).
+function applyProtection(w, url) {
+  if (!w || w.isDestroyed()) return;
+  try {
+    w.setContentProtection(!sec.screenshotAllowed(url));
+  } catch {}
+}
+
 function createWindow() {
   const bounds = visibleBounds(store.get("bounds", null));
   win = new BrowserWindow({
@@ -176,6 +187,7 @@ function createWindow() {
       additionalArguments: [`--sl-version=${app.getVersion()}`],
     }),
   });
+  win.setContentProtection(true); // pehla page aane tak band (surakshit default)
   if (store.get("maximized", false)) win.maximize();
   const zoom = store.get("zoom", 1);
 
@@ -207,8 +219,15 @@ function createWindow() {
 
   guardNavigation(wc, { main: true });
 
-  wc.on("did-navigate", (_e, url) => rememberPage(url));
-  wc.on("did-navigate-in-page", (_e, url, isMainFrame) => isMainFrame && rememberPage(url));
+  wc.on("did-navigate", (_e, url) => {
+    applyProtection(win, url);
+    rememberPage(url);
+  });
+  wc.on("did-navigate-in-page", (_e, url, isMainFrame) => {
+    if (!isMainFrame) return;
+    applyProtection(win, url); // site andar hi page badalti hai (Next.js)
+    rememberPage(url);
+  });
   wc.on("did-finish-load", () => wc.setZoomFactor(store.get("zoom", zoom)));
 
   // Internet nahi -> apni offline screen (khud dobara try karti hai)
@@ -319,6 +338,11 @@ app.on("web-contents-created", (_e, contents) => {
   contents.on("will-attach-webview", (e) => e.preventDefault());
   contents.on("did-create-window", (child) => {
     child.setMenuBarVisibility(false);
+    // PDF window: screenshot band. Payment / bank window: khula.
+    const first = child.webContents.getURL();
+    if (first) applyProtection(child, first);
+    else child.setContentProtection(true); // page aane tak band
+    child.webContents.on("did-navigate", (_ev, url) => applyProtection(child, url));
     guardNavigation(child.webContents, { main: false });
   });
 });
@@ -418,7 +442,7 @@ async function verifySelfCli(manifestPath) {
   }
 }
 
-// ── Start ──────────────────────────────────────────────────────────────────
+// ── Start ──────────────────────────────────────────────────────────────────────
 
 app.whenReady().then(() => {
   if (!IS_PRIMARY) return;
